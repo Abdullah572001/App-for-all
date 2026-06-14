@@ -1,0 +1,6 @@
+{
+  "name": "IIUC PDF Organiser",
+  "description": "An academic PDF file organiser, syllabus repository, and question bank manager for IIUC departments and semesters.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
