@@ -5,11 +5,120 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.PdfDocument
 import com.example.data.PdfRepository
+import com.example.data.ClassRepresentative
+import com.example.data.User
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
+enum class SignUpResult {
+    SUCCESS,
+    ALREADY_EXISTS,
+    INVALID_EMAIL,
+    EMPTY_FIELDS
+}
+
 class PdfViewModel(private val repository: PdfRepository) : ViewModel() {
+
+    // General User Authentication State
+    private val _currentUser = MutableStateFlow<User?>(null)
+    val currentUser = _currentUser.asStateFlow()
+
+    suspend fun signUpUser(email: String, idNo: String, pass: String): SignUpResult {
+        val trimmedEmail = email.trim()
+        val trimmedId = idNo.trim()
+        val trimmedPass = pass.trim()
+
+        if (trimmedEmail.isEmpty() || trimmedId.isEmpty() || trimmedPass.isEmpty()) {
+            return SignUpResult.EMPTY_FIELDS
+        }
+
+        // Validate IIUC institutional Email (e.g. q251064@ugrad.iiuc.ac.bd or q251064@iiuc.ac.bd)
+        val lowerEmail = trimmedEmail.lowercase()
+        if (!lowerEmail.endsWith("@ugrad.iiuc.ac.bd") && !lowerEmail.endsWith("@iiuc.ac.bd")) {
+            return SignUpResult.INVALID_EMAIL
+        }
+
+        // Check if user already exists
+        val existing = repository.getUserByIdNo(trimmedId)
+        if (existing != null) {
+            return SignUpResult.ALREADY_EXISTS
+        }
+
+        // Save User in the Room database
+        val newUser = User(idNo = trimmedId, email = trimmedEmail, password = trimmedPass)
+        repository.insertUser(newUser)
+        _currentUser.value = newUser
+
+        // Authorize Role during Signup
+        if (trimmedId.equals("q251064", ignoreCase = true)) {
+            _isAdminMode.value = true
+            _activeCR.value = null
+        } else {
+            val crMatch = allCRs.value.firstOrNull { it.passcode.equals(trimmedId, ignoreCase = true) }
+            if (crMatch != null) {
+                _activeCR.value = crMatch
+                _isAdminMode.value = false
+            } else {
+                _activeCR.value = null
+                _isAdminMode.value = false
+            }
+        }
+
+        return SignUpResult.SUCCESS
+    }
+
+    suspend fun signInUser(idNo: String, pass: String): Boolean {
+        val trimmedId = idNo.trim()
+        val trimmedPass = pass.trim()
+
+        if (trimmedId.isEmpty() || trimmedPass.isEmpty()) {
+            return false
+        }
+
+        // 1. Default Admin check: default admin id and password is q251064
+        if (trimmedId.equals("q251064", ignoreCase = true) && trimmedPass == "q251064") {
+            var adminUser = repository.getUserByIdNo("q251064")
+            if (adminUser == null) {
+                 adminUser = User("q251064", "q251064@ugrad.iiuc.ac.bd", "q251064")
+                 repository.insertUser(adminUser)
+            }
+            _currentUser.value = adminUser
+            _isAdminMode.value = true
+            _activeCR.value = null
+            return true
+        }
+
+        // 2. Database user check
+        val user = repository.getUserByIdNo(trimmedId)
+        if (user != null && user.password == trimmedPass) {
+            _currentUser.value = user
+
+            // check if the ID matches as CR
+            if (trimmedId.equals("q251064", ignoreCase = true)) {
+                _isAdminMode.value = true
+                _activeCR.value = null
+            } else {
+                val crMatch = allCRs.value.firstOrNull { it.passcode.equals(trimmedId, ignoreCase = true) }
+                if (crMatch != null) {
+                    _activeCR.value = crMatch
+                    _isAdminMode.value = false
+                } else {
+                    _activeCR.value = null
+                    _isAdminMode.value = false
+                }
+            }
+            return true
+        }
+        return false
+    }
+
+    fun signOutUser() {
+        _currentUser.value = null
+        // Also logout of Admin / CR states on general sign out
+        _isAdminMode.value = false
+        _activeCR.value = null
+    }
 
     // Selections
     private val _currentDept = MutableStateFlow("CSE")
@@ -28,6 +137,18 @@ class PdfViewModel(private val repository: PdfRepository) : ViewModel() {
     private val _isAdminMode = MutableStateFlow(false)
     val isAdminMode = _isAdminMode.asStateFlow()
 
+    // Active Class Representative logged in
+    private val _activeCR = MutableStateFlow<ClassRepresentative?>(null)
+    val activeCR = _activeCR.asStateFlow()
+
+    // All registered CRs
+    val allCRs: StateFlow<List<ClassRepresentative>> = repository.allCRs
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
     // Download state map: document id -> progress percentage (0 to 100)
     private val _downloadProgress = MutableStateFlow<Map<Int, Int>>(emptyMap())
     val downloadProgress = _downloadProgress.asStateFlow()
@@ -39,6 +160,45 @@ class PdfViewModel(private val repository: PdfRepository) : ViewModel() {
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+    // Dynamic departments list
+    private val _customDepartments = MutableStateFlow<List<Pair<String, String>>>(emptyList())
+    val departments: StateFlow<List<Pair<String, String>>> = combine(
+        allPdfs,
+        _customDepartments
+    ) { pdfs, custom ->
+        val defaultList = listOf(
+            "CSE" to "Computer Science",
+            "EEE" to "Electrical Eng.",
+            "PHARM" to "Pharmacy Dept"
+        )
+        val existingCodes = (defaultList.map { it.first } + custom.map { it.first }).toSet()
+        val extraPdfsDepts = pdfs.map { it.department }.distinct()
+            .filter { it.isNotEmpty() && !existingCodes.contains(it.uppercase()) }
+            .map { it.uppercase() to it }
+        
+        defaultList + custom + extraPdfsDepts
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = listOf(
+            "CSE" to "Computer Science",
+            "EEE" to "Electrical Eng.",
+            "PHARM" to "Pharmacy Dept"
+        )
+    )
+
+    fun addDepartment(code: String, name: String) {
+        val uppercaseCode = code.trim().uppercase()
+        if (uppercaseCode.isNotEmpty()) {
+            viewModelScope.launch {
+                val currentDepts = departments.value
+                if (!currentDepts.any { it.first == uppercaseCode }) {
+                    _customDepartments.value = _customDepartments.value + (uppercaseCode to name.trim().ifEmpty { uppercaseCode })
+                }
+            }
+        }
+    }
 
     // Filtered lists
     val filteredPdfs: StateFlow<List<PdfDocument>> = combine(
@@ -105,6 +265,49 @@ class PdfViewModel(private val repository: PdfRepository) : ViewModel() {
 
     fun toggleAdminMode() {
         _isAdminMode.value = !_isAdminMode.value
+        if (!_isAdminMode.value) {
+            _activeCR.value = null
+        }
+    }
+
+    // Login checking admin seed + CR database entries
+    fun tryLoginWithPasscode(passcode: String): String {
+        val trimmed = passcode.trim()
+        if (trimmed == "iiuc123") {
+            _isAdminMode.value = true
+            _activeCR.value = null
+            return "ADMIN"
+        }
+        val match = allCRs.value.firstOrNull { it.passcode.equals(trimmed, ignoreCase = false) }
+        if (match != null) {
+            _activeCR.value = match
+            _isAdminMode.value = false
+            return "CR"
+        }
+        return "NONE"
+    }
+
+    fun logout() {
+        _isAdminMode.value = false
+        _activeCR.value = null
+    }
+
+    fun addCR(name: String, passcode: String, dept: String) {
+        viewModelScope.launch {
+            repository.insertCR(
+                ClassRepresentative(
+                    name = name.trim(),
+                    passcode = passcode.trim(),
+                    department = dept.trim().uppercase()
+                )
+            )
+        }
+    }
+
+    fun deleteCR(cr: ClassRepresentative) {
+        viewModelScope.launch {
+            repository.deleteCR(cr)
+        }
     }
 
     // Admin commands

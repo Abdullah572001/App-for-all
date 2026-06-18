@@ -28,4 +28,20 @@ interface PdfDao {
 
     @Query("DELETE FROM pdf_documents WHERE id = :id")
     suspend fun deletePdfById(id: Int)
+
+    @Query("SELECT * FROM class_representatives ORDER BY name ASC")
+    fun getAllCRs(): Flow<List<ClassRepresentative>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCR(cr: ClassRepresentative)
+
+    @Delete
+    suspend fun deleteCR(cr: ClassRepresentative)
+
+    // User Authentication Methods
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertUser(user: User)
+
+    @Query("SELECT * FROM users WHERE idNo = :idNo LIMIT 1")
+    suspend fun getUserByIdNo(idNo: String): User?
 }

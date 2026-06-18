@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [PdfDocument::class], version = 1, exportSchema = false)
+@Database(entities = [PdfDocument::class, ClassRepresentative::class, User::class], version = 3, exportSchema = false)
 abstract class PdfDatabase : RoomDatabase() {
     abstract fun pdfDao(): PdfDao
 
@@ -19,7 +19,9 @@ abstract class PdfDatabase : RoomDatabase() {
                     context.applicationContext,
                     PdfDatabase::class.java,
                     "iiuc_pdf_organiser_db"
-                ).build()
+                )
+                .fallbackToDestructiveMigration()
+                .build()
                 INSTANCE = instance
                 instance
             }

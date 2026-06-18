@@ -30,6 +30,24 @@ class PdfRepository(private val pdfDao: PdfDao) {
         pdfDao.deletePdfById(id)
     }
 
+    val allCRs: Flow<List<ClassRepresentative>> = pdfDao.getAllCRs()
+
+    suspend fun insertCR(cr: ClassRepresentative) = withContext(Dispatchers.IO) {
+        pdfDao.insertCR(cr)
+    }
+
+    suspend fun deleteCR(cr: ClassRepresentative) = withContext(Dispatchers.IO) {
+        pdfDao.deleteCR(cr)
+    }
+
+    suspend fun insertUser(user: User) = withContext(Dispatchers.IO) {
+        pdfDao.insertUser(user)
+    }
+
+    suspend fun getUserByIdNo(idNo: String): User? = withContext(Dispatchers.IO) {
+        pdfDao.getUserByIdNo(idNo)
+    }
+
     suspend fun seedDatabaseIfEmpty() = withContext(Dispatchers.IO) {
         val currentList = pdfDao.getAllPdfs().first()
         if (currentList.isEmpty()) {

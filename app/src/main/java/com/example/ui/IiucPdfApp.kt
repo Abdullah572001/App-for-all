@@ -54,76 +54,75 @@ fun IiucPdfApp(viewModel: PdfViewModel) {
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val selectedTypeFilter by viewModel.selectedTypeFilter.collectAsStateWithLifecycle()
     val isAdminMode by viewModel.isAdminMode.collectAsStateWithLifecycle()
+    val activeCR by viewModel.activeCR.collectAsStateWithLifecycle()
     val filteredPdfs by viewModel.filteredPdfs.collectAsStateWithLifecycle()
     val downloadedPdfs by viewModel.downloadedPdfs.collectAsStateWithLifecycle()
     val downloadProgress by viewModel.downloadProgress.collectAsStateWithLifecycle()
+    val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
 
     // Local controller states
     var showAdminDialog by remember { mutableStateOf(false) }
     var showUploadDialog by remember { mutableStateOf(false) }
+    var showProfileDialog by remember { mutableStateOf(false) }
     var activeTab by remember { mutableStateOf(0) } // 0: All Archive, 1: Saved Offline
 
-    val departments = listOf(
-        "CSE" to "Computer Science",
-        "EEE" to "Electrical Eng.",
-        "PHARM" to "Pharmacy Dept"
-    )
+    LaunchedEffect(currentUser, isAdminMode) {
+        if (currentUser == null || !isAdminMode) {
+            activeTab = 0
+        }
+    }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "IIUC PDF Organiser",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+    val departments by viewModel.departments.collectAsStateWithLifecycle()
+
+    if (currentUser == null) {
+        AuthScreen(viewModel = viewModel)
+    } else {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                text = "IIUC PDF Organiser",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
                             )
-                        )
-                        Text(
-                            text = "Academic File Repository • Library Management",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                color = Color.Gray,
-                                fontWeight = FontWeight.Medium
+                            Text(
+                                text = "Academic File Repository • Library Management",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = Color.Gray,
+                                    fontWeight = FontWeight.Medium
+                                )
                             )
-                        )
-                    }
-                },
-                actions = {
-                    // Profile Badge matching the HTML mockup
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f))
-                            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = "User Account",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(
-                        onClick = { showAdminDialog = true },
-                        modifier = Modifier.testTag("admin_access_button")
-                    ) {
-                        Icon(
-                            imageVector = if (isAdminMode) Icons.Default.LockOpen else Icons.Default.Lock,
-                            contentDescription = "Admin Toggle",
-                            tint = if (isAdminMode) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                        }
+                    },
+                    actions = {
+                        // Profile Badge matching the HTML mockup - clickable to show student profile dialog
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f))
+                                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f), CircleShape)
+                                .clickable { showProfileDialog = true }
+                                .testTag("student_profile_badge"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "User Account",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background
+                    )
                 )
-            )
-        },
+            },
         bottomBar = {
             NavigationBar(
                 containerColor = Color(0xFFF3EDF7),
@@ -154,19 +153,21 @@ fun IiucPdfApp(viewModel: PdfViewModel) {
                     label = { Text("গচ্ছিত ফাইলসমূহ", fontWeight = FontWeight.Bold) },
                     modifier = Modifier.testTag("nav_offline")
                 )
-                NavigationBarItem(
-                    selected = activeTab == 2,
-                    onClick = { activeTab = 2 },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings Icon") },
-                    label = { Text("অ্যাডমিন", fontWeight = FontWeight.Bold) },
-                    modifier = Modifier.testTag("nav_admin")
-                )
+                if (isAdminMode) {
+                    NavigationBarItem(
+                        selected = activeTab == 2,
+                        onClick = { activeTab = 2 },
+                        icon = { Icon(Icons.Default.Settings, contentDescription = "Settings Icon") },
+                        label = { Text("অ্যাডমিন", fontWeight = FontWeight.Bold) },
+                        modifier = Modifier.testTag("nav_admin")
+                    )
+                }
             }
         },
         floatingActionButton = {
-            if (isAdminMode && activeTab == 0) {
+            if ((isAdminMode || activeCR != null) && activeTab == 0) {
                 ExtendedFloatingActionButton(
-                    text = { Text("নতুন ফাইল যোগ করুন", color = Color.White) },
+                    text = { Text(if (activeCR != null) "বিভাগে ফাইল যোগ" else "নতুন ফাইল যোগ করুন", color = Color.White) },
                     icon = { Icon(Icons.Default.Add, contentDescription = "Upload", tint = Color.White) },
                     onClick = { showUploadDialog = true },
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -215,17 +216,15 @@ fun IiucPdfApp(viewModel: PdfViewModel) {
                 )
 
                 // Dept Switcher Row - Rounded full pills matching the HTML Quick Filters
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    departments.forEach { (deptCode, deptLabel) ->
+                    items(departments) { (deptCode, deptLabel) ->
                         val isSelected = selectedDept == deptCode
                         Box(
                             modifier = Modifier
-                                .weight(1f)
                                 .clip(CircleShape)
                                 .background(
                                     if (isSelected) MaterialTheme.colorScheme.primary
@@ -237,7 +236,7 @@ fun IiucPdfApp(viewModel: PdfViewModel) {
                                     shape = CircleShape
                                 )
                                 .clickable { viewModel.setDepartment(deptCode) }
-                                .padding(vertical = 10.dp),
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -245,7 +244,8 @@ fun IiucPdfApp(viewModel: PdfViewModel) {
                                     imageVector = when (deptCode) {
                                         "CSE" -> Icons.Default.Code
                                         "EEE" -> Icons.Default.Bolt
-                                        else -> Icons.Default.MedicalServices
+                                        "PHARM" -> Icons.Default.MedicalServices
+                                        else -> Icons.Default.School
                                     },
                                     contentDescription = deptCode,
                                     tint = if (isSelected) Color.White else MaterialTheme.colorScheme.primary,
@@ -488,7 +488,7 @@ fun IiucPdfApp(viewModel: PdfViewModel) {
         }
     }
 
-    // Passcode Verification dialog for Admin Access Panel
+    // Passcode Verification and Manage Account dialog for Admin/CR Access Panel
     if (showAdminDialog) {
         var passcode by remember { mutableStateOf("") }
         var isError by remember { mutableStateOf(false) }
@@ -507,83 +507,141 @@ fun IiucPdfApp(viewModel: PdfViewModel) {
                         .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = "Lock",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(40.dp)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "IIUC এডমিন অ্যাক্সেস",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = "শিক্ষার্থীদের জন্য নতুন কুইজ প্রশ্ন ও লেকচার স্লাইড ক্যাটাগরাইজ ও আপলোড করতে পাসকোড দিন",
-                        fontSize = 12.sp,
-                        textAlign = TextAlign.Center,
-                        color = Color.Gray,
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    OutlinedTextField(
-                        value = passcode,
-                        onValueChange = {
-                            passcode = it
-                            isError = false
-                        },
-                        label = { Text("এডমিন সিক্রেট কোড") },
-                        placeholder = { Text("যেমন: iiuc123") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        isError = isError,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("admin_passcode_field"),
-                        singleLine = true
-                    )
-
-                    if (isError) {
-                        Text(
-                            text = "ভুল পাসকোড! অনুগ্রহ করে 'iiuc123' টাইপ করুন।",
-                            color = MaterialTheme.colorScheme.error,
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(top = 4.dp)
+                    if (isAdminMode || activeCR != null) {
+                        // LOGGED IN STATE
+                        Icon(
+                            imageVector = if (isAdminMode) Icons.Default.LockOpen else Icons.Default.AccountCircle,
+                            contentDescription = "User Profile",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(50.dp)
                         )
-                    }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = if (isAdminMode) "প্রধান এডমিন প্যানেল" else "সিআর ড্যাশবোর্ড",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = if (isAdminMode) {
+                                "অ্যাক্সেস লেভেল: সম্পূর্ণ এডমিন প্রাধিকার। আপনি নতুন ফাইল আপলোড, ডিলিট এবং সিআরদের নিয়োগ ও পরিচালনা করতে পারেন।"
+                            } else {
+                                "অ্যাক্সেস লেভেল: ক্লাস রিপ্রেজেনটেটিভ (CR)\nনাম: ${activeCR?.name}\nবিভাগ: ${activeCR?.department}"
+                            },
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center,
+                            color = Color.DarkGray,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
 
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        TextButton(
-                            onClick = { showAdminDialog = false },
-                            modifier = Modifier.weight(1f)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("বাতিল")
+                            TextButton(
+                                onClick = { showAdminDialog = false },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("বন্ধ করুন")
+                            }
+
+                            Button(
+                                onClick = {
+                                    viewModel.logout()
+                                    showAdminDialog = false
+                                    Toast.makeText(context, "সফলভাবে লগআউট হয়েছেন!", Toast.LENGTH_SHORT).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                modifier = Modifier
+                                    .weight(1.5f)
+                                    .testTag("admin_logout_button")
+                            ) {
+                                Text("লগআউট", color = Color.White)
+                            }
+                        }
+                    } else {
+                        // NOT LOGGED IN STATE
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "Lock",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(40.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "এডমিন / সিআর অ্যাক্সেস",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "নতুন ফাইল যুক্ত ও আপলোড করতে এডমিন সিক্রেট কোড অথবা এডমিন কতৃক নির্ধারিত সিআর পাসকোড টাইপ করুন।",
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center,
+                            color = Color.Gray,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        OutlinedTextField(
+                            value = passcode,
+                            onValueChange = {
+                                passcode = it
+                                isError = false
+                            },
+                            label = { Text("গোপন পাসকোড (Passcode)") },
+                            placeholder = { Text("যেমন: iiuc123 বা cr456") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            isError = isError,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("admin_passcode_field"),
+                            singleLine = true
+                        )
+
+                        if (isError) {
+                            Text(
+                                text = "ভুল পাসকোড! অনুগ্রহ করে সঠিক এডমিন বা সিআর কোড টাইপ করুন।",
+                                color = MaterialTheme.colorScheme.error,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
                         }
 
-                        Button(
-                            onClick = {
-                                if (passcode == "iiuc123") {
-                                    viewModel.toggleAdminMode()
-                                    showAdminDialog = false
-                                    Toast.makeText(context, "এডমিন মুড সফলভাবে সক্রিয় হয়েছে!", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    isError = true
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                            modifier = Modifier
-                                .weight(1.5f)
-                                .testTag("admin_verify_button")
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("যাচাই করুন", color = Color.White)
+                            TextButton(
+                                onClick = { showAdminDialog = false },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("বাতিল")
+                            }
+
+                            Button(
+                                onClick = {
+                                    val res = viewModel.tryLoginWithPasscode(passcode)
+                                    if (res == "ADMIN") {
+                                        showAdminDialog = false
+                                        Toast.makeText(context, "এডমিন প্যানেলে স্বাগতম!", Toast.LENGTH_SHORT).show()
+                                    } else if (res == "CR") {
+                                        showAdminDialog = false
+                                        Toast.makeText(context, "সিআর হিসেবে সফলভাবে লগইন হয়েছেন!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        isError = true
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                modifier = Modifier
+                                    .weight(1.5f)
+                                    .testTag("admin_verify_button")
+                            ) {
+                                Text("যাচাই করুন", color = Color.White)
+                            }
                         }
                     }
                 }
@@ -594,7 +652,7 @@ fun IiucPdfApp(viewModel: PdfViewModel) {
     // Dialog for Admin Uploading / Automated Category Selection
     if (showUploadDialog) {
         var uploadTitle by remember { mutableStateOf("") }
-        var uploadDept by remember { mutableStateOf(selectedDept) }
+        var uploadDept by remember { mutableStateOf(activeCR?.department ?: selectedDept) }
         var uploadSemester by remember { mutableStateOf(selectedSemester.toString()) }
         var uploadSubCode by remember { mutableStateOf("") }
         var uploadSubName by remember { mutableStateOf("") }
@@ -690,26 +748,31 @@ fun IiucPdfApp(viewModel: PdfViewModel) {
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .border(1.dp, Color.Gray, RoundedCornerShape(8.dp))
+                                        .background(if (activeCR != null) Color.LightGray.copy(alpha = 0.2f) else Color.Transparent)
                                         .padding(8.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(uploadDept, fontWeight = FontWeight.SemiBold)
-                                    // Simulated dropdown
-                                    Row {
-                                        listOf("CSE", "EEE", "PHARM").forEach { itemDept ->
-                                            if (itemDept != uploadDept) {
-                                                Text(
-                                                    text = itemDept,
-                                                    fontSize = 10.sp,
-                                                    modifier = Modifier
-                                                        .clickable { uploadDept = itemDept }
-                                                        .background(Color.LightGray.copy(alpha = 0.3f), CircleShape)
-                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(3.dp))
+                                    Text(uploadDept, fontWeight = FontWeight.Bold)
+                                    if (activeCR == null) {
+                                        // Simulated dropdown
+                                        Row {
+                                            listOf("CSE", "EEE", "PHARM").forEach { itemDept ->
+                                                if (itemDept != uploadDept) {
+                                                    Text(
+                                                        text = itemDept,
+                                                        fontSize = 10.sp,
+                                                        modifier = Modifier
+                                                            .clickable { uploadDept = itemDept }
+                                                            .background(Color.LightGray.copy(alpha = 0.3f), CircleShape)
+                                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(3.dp))
+                                                }
                                             }
                                         }
+                                    } else {
+                                        Text("(শুধুমাত্র সিআর)", fontSize = 9.sp, color = Color.Gray)
                                     }
                                 }
                             }
@@ -814,6 +877,123 @@ fun IiucPdfApp(viewModel: PdfViewModel) {
                                     .testTag("submit_upload_button")
                             ) {
                                 Text("সংরক্ষণ করুন", color = Color.White)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Student Profile Dialog for the logged in user
+    if (showProfileDialog && currentUser != null) {
+            Dialog(onDismissRequest = { showProfileDialog = false }) {
+                Card(
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .border(1.dp, Color(0xFFCAC4D0).copy(alpha = 0.5f), RoundedCornerShape(24.dp))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(72.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AccountCircle,
+                                contentDescription = "User Detail Face",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(48.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text(
+                            text = "শিক্ষার্থী প্রোফাইল",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Details Card inside dialog
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFF3EDF7), RoundedCornerShape(12.dp))
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("আইডি নম্বর:", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
+                                Text(currentUser?.idNo ?: "", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                            HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("ইন্সটিটিউট ইমেইল:", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
+                                Text(currentUser?.email ?: "", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                            HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("ব্যবহারকারী রোল:", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
+                                Text(
+                                    text = if (isAdminMode) "এডমিন প্রবেশাধিকার" else if (activeCR != null) "সিআর (" + activeCR?.department + ")" else "সাধারণ শিক্ষার্থী",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isAdminMode) MaterialTheme.colorScheme.error else if (activeCR != null) MaterialTheme.colorScheme.primary else Color.DarkGray
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        // Buttons
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            TextButton(
+                                onClick = { showProfileDialog = false },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("বন্ধ করুন")
+                            }
+
+                            Button(
+                                onClick = {
+                                    showProfileDialog = false
+                                    viewModel.signOutUser()
+                                    Toast.makeText(context, "সফলভাবে লগআউট হয়েছেন!", Toast.LENGTH_SHORT).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1.2f).testTag("dialog_logout_button")
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Logout, contentDescription = "Log Out", tint = Color.White, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("লগআউট", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
@@ -1187,8 +1367,26 @@ fun AdminDashboardView(
     isAdminMode: Boolean
 ) {
     val context = LocalContext.current
+    val activeCR by viewModel.activeCR.collectAsStateWithLifecycle()
     var passcode by remember { mutableStateOf("") }
     var isPasscodeError by remember { mutableStateOf(false) }
+
+    // Dynamic departments list
+    val departments by viewModel.departments.collectAsStateWithLifecycle()
+
+    // New Department creator inputs
+    var newDeptCode by remember { mutableStateOf("") }
+    var newDeptName by remember { mutableStateOf("") }
+    var isNewDeptCodeError by remember { mutableStateOf(false) }
+
+    // CR Management Inputs
+    var crNameInput by remember { mutableStateOf("") }
+    var crPasscodeInput by remember { mutableStateOf("") }
+    var crDeptInput by remember { mutableStateOf("CSE") }
+    var isCrNameError by remember { mutableStateOf(false) }
+    var isCrPasscodeError by remember { mutableStateOf(false) }
+
+    val allCRs by viewModel.allCRs.collectAsStateWithLifecycle()
 
     // Upload Form input values
     var titleInput by remember { mutableStateOf("") }
@@ -1207,7 +1405,7 @@ fun AdminDashboardView(
     // Admin list filtering by department
     var filterDept by remember { mutableStateOf("All") }
 
-    if (!isAdminMode) {
+    if (!isAdminMode && activeCR == null) {
         // RENDER PASSCODE ACCESS GATE
         Column(
             modifier = Modifier
@@ -1236,13 +1434,13 @@ fun AdminDashboardView(
             Spacer(modifier = Modifier.height(20.dp))
 
             Text(
-                text = "প্রশাসক প্রবেশদ্বার",
+                text = "প্রশাসক ও সিআর প্রবেশদ্বার",
                 style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.primary
             )
 
             Text(
-                text = "Admin Access Portal • Restricted",
+                text = "Admin & CR Access Portal • Restricted",
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp),
                 color = Color.Gray,
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
@@ -1262,7 +1460,7 @@ fun AdminDashboardView(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "ডকুমেন্ট আপলোড, বিভাগ যুক্তকরণ ও ফাইল ডাটাবেজ পরিচালনার জন্য সঠিক সিক্রেট পাসকোড প্রদান করুন।",
+                        text = "ফাইল আপলোড ও অ্যাক্সেস কন্ট্রোলের জন্য এডমিন সিক্রেট কোড অথবা এডমিন দ্বারা প্রদত্ত আপনার সিআর পাসকোড টাইপ করুন।",
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center,
                         color = Color(0xFF49454F),
@@ -1276,8 +1474,8 @@ fun AdminDashboardView(
                             passcode = it
                             isPasscodeError = false
                         },
-                        label = { Text("এডমিন সিক্রেট পাসকোড") },
-                        placeholder = { Text("যেমন: iiuc123") },
+                        label = { Text("গোপন সিক্রেট পাসকোড") },
+                        placeholder = { Text("যেমন: iiuc123 বা cr456") },
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         isError = isPasscodeError,
@@ -1290,7 +1488,7 @@ fun AdminDashboardView(
 
                     if (isPasscodeError) {
                         Text(
-                            text = "ভুল কোড! সঠিক কোডটি টাইপ করুন (iiuc123)।",
+                            text = "ভুল কোড! সঠিক কোডটি টাইপ করুন।",
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier
@@ -1303,10 +1501,13 @@ fun AdminDashboardView(
 
                     Button(
                         onClick = {
-                            if (passcode == "iiuc123") {
-                                viewModel.toggleAdminMode()
+                            val res = viewModel.tryLoginWithPasscode(passcode)
+                            if (res == "ADMIN") {
                                 isPasscodeError = false
                                 Toast.makeText(context, "এডমিন প্যানেলে স্বাগতম!", Toast.LENGTH_SHORT).show()
+                            } else if (res == "CR") {
+                                isPasscodeError = false
+                                Toast.makeText(context, "সিআর হিসেবে ড্যাশবোর্ডে স্বাগতম!", Toast.LENGTH_SHORT).show()
                             } else {
                                 isPasscodeError = true
                             }
@@ -1330,6 +1531,416 @@ fun AdminDashboardView(
                 }
             }
             Spacer(modifier = Modifier.height(20.dp))
+        }
+    } else if (activeCR != null && !isAdminMode) {
+        // [CLASS REPRESENTATIVE CONTROL PORTS]
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(top = 16.dp, bottom = 120.dp)
+        ) {
+            // CR Welcome Banner
+            item {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "সিআর ফাইল আপলোড পোর্টাল",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    text = "${activeCR?.name} • বিভাগ: ${activeCR?.department}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                )
+                            }
+                            
+                            Button(
+                                onClick = {
+                                    viewModel.logout()
+                                    Toast.makeText(context, "সিআর পোর্টাল থেকে সফলভাবে লগআউট হয়েছেন!", Toast.LENGTH_SHORT).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Text("লগআউট", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 12.dp),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
+                        )
+
+                        // Statistics
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("আপনার বিভাগের মোট ফাইল", fontSize = 10.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f))
+                                Text("${allPdfs.count { it.department.equals(activeCR?.department, ignoreCase = true) }} টি", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            }
+                            Column {
+                                Text("লগইন আইডি (Passcode)", fontSize = 10.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f))
+                                Text(activeCR?.passcode ?: "", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // CR Upload Form Card
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Color(0xFFCAC4D0), RoundedCornerShape(16.dp))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "আপনার বিভাগ (${activeCR?.department}) এ ফাইল যোগ করুন",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        // File Title
+                        OutlinedTextField(
+                            value = titleInput,
+                            onValueChange = {
+                                titleInput = it
+                                isTitleError = false
+                            },
+                            label = { Text("ফাইলের নাম বা শিরোনাম") },
+                            placeholder = { Text("যেমন: Circuit Theory Assignment Lecture 3") },
+                            isError = isTitleError,
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(8.dp)
+                        )
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Subject Code
+                            OutlinedTextField(
+                                value = subCodeInput,
+                                onValueChange = {
+                                    subCodeInput = it
+                                    isSubCodeError = false
+                                },
+                                label = { Text("বিষয় কোড") },
+                                placeholder = { Text("EEE-1101") },
+                                isError = isSubCodeError,
+                                modifier = Modifier.weight(1.0f),
+                                singleLine = true,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+
+                            // Subject Name
+                            OutlinedTextField(
+                                value = subNameInput,
+                                onValueChange = { subNameInput = it },
+                                label = { Text("বিষয়ের নাম") },
+                                placeholder = { Text("Electrical Circuit") },
+                                modifier = Modifier.weight(1.2f),
+                                singleLine = true,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                        }
+
+                        // Semester Selection (1 to 8)
+                        Column {
+                            Text("সেমেস্টার নির্বাচন করুন (১-৮)", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold))
+                            Spacer(modifier = Modifier.height(6.dp))
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                items(8) { idx ->
+                                    val semNumber = (idx + 1).toString()
+                                    val isSel = semesterInput == semNumber
+                                    Box(
+                                        modifier = Modifier
+                                            .size(width = 54.dp, height = 36.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSel) MaterialTheme.colorScheme.primary else Color(0xFFF3EDF7))
+                                            .border(1.dp, if (isSel) MaterialTheme.colorScheme.primary else Color(0xFFCAC4D0), RoundedCornerShape(8.dp))
+                                            .clickable { semesterInput = semNumber },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "${semNumber}st",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp,
+                                            color = if (isSel) Color.White else Color(0xFF49454F)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Category Type Selector
+                        Column {
+                            Text("ফাইলের ধরন (Type Map)", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold))
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    "Slide" to "স্লাইড",
+                                    "Book" to "বই",
+                                    "Note" to "নোট",
+                                    "Question" to "প্রশ্ন"
+                                ).forEach { (typeVal, label) ->
+                                    val isSel = typeInput == typeVal
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSel) Color(0xFFEADDFF) else Color.Transparent)
+                                            .border(1.dp, if (isSel) MaterialTheme.colorScheme.primary else Color(0xFFCAC4D0), RoundedCornerShape(8.dp))
+                                            .clickable { typeInput = typeVal }
+                                            .padding(vertical = 6.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (isSel) Color(0xFF21005D) else Color.Gray
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // File size & Save Button
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = sizeInput,
+                                onValueChange = { sizeInput = it },
+                                label = { Text("সাইজ") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+
+                            Button(
+                                onClick = {
+                                    if (titleInput.trim().isEmpty()) {
+                                        isTitleError = true
+                                    }
+                                    if (subCodeInput.trim().isEmpty()) {
+                                        isSubCodeError = true
+                                    }
+
+                                    if (titleInput.trim().isNotEmpty() && subCodeInput.trim().isNotEmpty()) {
+                                        val sNum = semesterInput.toIntOrNull() ?: 1
+                                        val sName = subNameInput.ifEmpty { "Academic Course" }
+                                        viewModel.addPdf(
+                                            title = titleInput.trim(),
+                                            dept = activeCR?.department ?: "CSE",
+                                            sem = sNum,
+                                            subCode = subCodeInput.trim().uppercase(),
+                                            subName = sName.trim(),
+                                            type = typeInput,
+                                            size = sizeInput.trim()
+                                        )
+                                        // Reset Form inputs
+                                        titleInput = ""
+                                        subCodeInput = ""
+                                        subNameInput = ""
+                                        Toast.makeText(context, "সিআর হিসেবে নতুন ফাইল সফলভাবে ডাটাবেজে সেভ করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .weight(1.5f)
+                                    .height(52.dp)
+                                    .padding(top = 6.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = "Add", tint = Color.White, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("বিভাগ ডিরেক্টরিতে সেভ", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // CR's Department File List Directory
+            item {
+                Text(
+                    text = "আপনার বিভাগ (${activeCR?.department}) এর আপলোডকৃত ফাইলসমূহ",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = Color(0xFF1C1B1F),
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+
+            val crFilteredPdfs = allPdfs.filter { pdf ->
+                pdf.department.equals(activeCR?.department, ignoreCase = true)
+            }
+
+            if (crFilteredPdfs.isEmpty()) {
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, Color(0xFFCAC4D0).copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("আপনার বিভাগে কোনো ফাইল পাওয়া যায়নি। অনুগ্রহ করে নতুন ফাইল যোগ করুন।", color = Color.Gray, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            } else {
+                items(crFilteredPdfs, key = { pdf -> "cr_${pdf.id}" }) { pdf ->
+                    var showDeleteDialog by remember { mutableStateOf(false) }
+
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, Color(0xFFCAC4D0).copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        when (pdf.fileType) {
+                                            "Question" -> Color(0xFFEADDFF)
+                                            "Book" -> Color(0xFFFFE0B2)
+                                            "Note" -> Color(0xFFE1F5FE)
+                                            else -> Color(0xFFE8F5E9)
+                                        }
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = when (pdf.fileType) {
+                                        "Question" -> Icons.Default.Article
+                                        "Book" -> Icons.Default.Book
+                                        "Note" -> Icons.Default.Description
+                                        else -> Icons.Default.Info
+                                    },
+                                    contentDescription = null,
+                                    tint = when (pdf.fileType) {
+                                        "Question" -> Color(0xFF21005D)
+                                        "Book" -> Color(0xFFE65100)
+                                        "Note" -> Color(0xFF01579B)
+                                        else -> Color(0xFF1B5E20)
+                                    },
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = pdf.title,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = Color(0xFF1C1B1F)
+                                )
+                                Text(
+                                    text = "Semester ${pdf.semester} • ${pdf.subjectCode} • Size: ${pdf.fileSize}",
+                                    fontSize = 11.sp,
+                                    color = Color.Gray
+                                )
+                            }
+
+                            IconButton(
+                                onClick = { showDeleteDialog = true },
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(MaterialTheme.colorScheme.error.copy(alpha = 0.08f), CircleShape)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete CR upload",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    if (showDeleteDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showDeleteDialog = false },
+                            title = { Text("মুছে ফেলার সতর্কতা", fontWeight = FontWeight.Bold) },
+                            text = { Text("আপনি কি সিআর হিসেবে আপলোডকৃত '${pdf.title}' ফাইলটি মুছে ফেলতে চান?") },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        viewModel.deletePdf(pdf)
+                                        showDeleteDialog = false
+                                        Toast.makeText(context, "ফাইলটি সফলভাবে মুছে ফেলা হয়েছে!", Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                ) {
+                                    Text("মুছে ফেলুন", color = Color.White)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showDeleteDialog = false }) {
+                                    Text("বাতিল")
+                                }
+                            }
+                        )
+                    }
+                }
+            }
         }
     } else {
         // ADMIN AUTHORIZED: RENDER THE BEAUTIFUL CONTROL DASHBOARD
@@ -1359,7 +1970,7 @@ fun AdminDashboardView(
                         ) {
                             Column {
                                 Text(
-                                    text = "অ্যাডমিন ফাইল কন্ট্রোল স্টেশন",
+                                    text = "অ্যাডমিন ফাইল কন্ট্রোল প্যানেল",
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                     color = Color(0xFF21005D)
                                 )
@@ -1372,7 +1983,7 @@ fun AdminDashboardView(
                             
                             Button(
                                 onClick = {
-                                    viewModel.toggleAdminMode()
+                                    viewModel.logout()
                                     Toast.makeText(context, "এডমিন মুড থেকে প্রস্থান করেছেন!", Toast.LENGTH_SHORT).show()
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4)),
@@ -1405,6 +2016,178 @@ fun AdminDashboardView(
                             Column {
                                 Text("অন্যান্য বিভাগ", fontSize = 10.sp, color = Color(0xFF49454F))
                                 Text("${allPdfs.count { it.department != "CSE" }} টি", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF21005D))
+                            }
+                        }
+                    }
+                }
+            }
+
+            // [CLASS REPRESENTATIVE (CR) MANAGEMENT SECTION FOR ADMIN]
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Color(0xFFCAC4D0), RoundedCornerShape(16.dp))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "সিআর নিয়োগ ও ব্যবস্থাপনা (Class Representative Management)",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        Text(
+                            text = "শুধুমাত্র অ্যাডমিনের মনোনীত সিআর (CR) পাসকোড ব্যবহার করে সাধারণ ডোমেনে ফাইল আপলোড করতে পারবে।",
+                            fontSize = 11.sp,
+                            color = Color.Gray,
+                            lineHeight = 14.sp
+                        )
+
+                        // Input: CR Name
+                        OutlinedTextField(
+                            value = crNameInput,
+                            onValueChange = {
+                                crNameInput = it
+                                isCrNameError = false
+                            },
+                            label = { Text("সিআর এর নাম (Name)") },
+                            placeholder = { Text("যেমন: তানভীর রহমান") },
+                            isError = isCrNameError,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("cr_name_input"),
+                            singleLine = true,
+                            shape = RoundedCornerShape(8.dp)
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Input: Passcode / PIN
+                            OutlinedTextField(
+                                value = crPasscodeInput,
+                                onValueChange = {
+                                    crPasscodeInput = it
+                                    isCrPasscodeError = false
+                                },
+                                label = { Text("পাসকোড (Passcode)") },
+                                placeholder = { Text("যেমন: cr456") },
+                                isError = isCrPasscodeError,
+                                modifier = Modifier
+                                    .weight(1.0f)
+                                    .testTag("cr_passcode_input"),
+                                singleLine = true,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+
+                            // Dropdown Department Selector
+                            Column(modifier = Modifier.weight(1.0f)) {
+                                Text("বিভাগ (Dept)", style = MaterialTheme.typography.labelSmall)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .border(1.dp, Color.Gray, RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            val index = departments.indexOfFirst { it.first == crDeptInput }
+                                            if (index >= 0 && departments.isNotEmpty()) {
+                                                val nextIndex = (index + 1) % departments.size
+                                                crDeptInput = departments[nextIndex].first
+                                            } else if (departments.isNotEmpty()) {
+                                                crDeptInput = departments[0].first
+                                            }
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(crDeptInput, fontWeight = FontWeight.Bold)
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Select Dept", modifier = Modifier.size(20.dp))
+                                }
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                if (crNameInput.trim().isEmpty()) isCrNameError = true
+                                if (crPasscodeInput.trim().isEmpty()) isCrPasscodeError = true
+
+                                if (crNameInput.trim().isNotEmpty() && crPasscodeInput.trim().isNotEmpty()) {
+                                    viewModel.addCR(crNameInput.trim(), crPasscodeInput.trim(), crDeptInput)
+                                    Toast.makeText(context, "নতুন সিআর '$crNameInput' সফলভাবে নিয়োগ দেওয়া হয়েছে!", Toast.LENGTH_SHORT).show()
+                                    crNameInput = ""
+                                    crPasscodeInput = ""
+                                }
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("btn_appoint_cr"),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(Icons.Default.PersonAdd, contentDescription = "Add CR Icon", modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("নতুন সিআর নিয়োগ দিন", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
+                            }
+                        }
+
+                        // Appointed CR list directory inside Admin Panel
+                        if (allCRs.isNotEmpty()) {
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                            Text(
+                                text = "নিযুক্তকৃত সিআর তালিকা:",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                allCRs.forEach { cr ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(Color(0xFFF3EDF7), RoundedCornerShape(8.dp))
+                                            .border(0.5.dp, Color(0xFFCAC4D0), RoundedCornerShape(8.dp))
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text(cr.name, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            Text("বিভাগ: ${cr.department} • পাসকোড: ${cr.passcode}", fontSize = 10.sp, color = Color.Gray)
+                                        }
+
+                                        IconButton(
+                                            onClick = {
+                                                viewModel.deleteCR(cr)
+                                                Toast.makeText(context, "সিআর '${cr.name}' অপসারণ করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Delete CR",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1486,24 +2269,23 @@ fun AdminDashboardView(
                         Column {
                             Text("বিভাগ নির্বাচন করুন (Department)", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold))
                             Spacer(modifier = Modifier.height(6.dp))
-                            Row(
+                            LazyRow(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                listOf("CSE", "EEE", "PHARM").forEach { dept ->
-                                    val isSel = deptInput == dept
+                                items(departments) { (deptCode, _) ->
+                                    val isSel = deptInput == deptCode
                                     Box(
                                         modifier = Modifier
-                                            .weight(1f)
                                             .clip(CircleShape)
                                             .background(if (isSel) MaterialTheme.colorScheme.primary else Color(0xFFF3EDF7))
                                             .border(1.dp, if (isSel) MaterialTheme.colorScheme.primary else Color(0xFFCAC4D0), CircleShape)
-                                            .clickable { deptInput = dept }
-                                            .padding(vertical = 8.dp),
+                                            .clickable { deptInput = deptCode }
+                                            .padding(horizontal = 14.dp, vertical = 8.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
-                                            text = dept,
+                                            text = deptCode,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 11.sp,
                                             color = if (isSel) Color.White else Color(0xFF49454F)
@@ -1641,6 +2423,93 @@ fun AdminDashboardView(
                 }
             }
 
+            // Add New Department Card
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Color(0xFFCAC4D0), RoundedCornerShape(16.dp))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "নতুন বিভাগ যুক্তকরণ (Add New Department)",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Department Code
+                            OutlinedTextField(
+                                value = newDeptCode,
+                                onValueChange = {
+                                    newDeptCode = it
+                                    isNewDeptCodeError = false
+                                },
+                                label = { Text("ডিপার্টমেন্ট কোড") },
+                                placeholder = { Text("BBA, ME, LAW etc") },
+                                isError = isNewDeptCodeError,
+                                modifier = Modifier
+                                    .weight(1.0f)
+                                    .testTag("form_new_dept_code_field"),
+                                singleLine = true,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+
+                            // Department Name
+                            OutlinedTextField(
+                                value = newDeptName,
+                                onValueChange = { newDeptName = it },
+                                label = { Text("ডিপার্টমেন্টের নাম") },
+                                placeholder = { Text("যেমন: Business Dept") },
+                                modifier = Modifier
+                                    .weight(1.5f)
+                                    .testTag("form_new_dept_name_field"),
+                                singleLine = true,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                if (newDeptCode.trim().isEmpty()) {
+                                    isNewDeptCodeError = true
+                                } else {
+                                    val code = newDeptCode.trim().uppercase()
+                                    val name = newDeptName.trim()
+                                    viewModel.addDepartment(code, name)
+                                    Toast.makeText(context, "নতুন বিভাগ '$code' সফলভাবে যুক্ত করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                                    newDeptCode = ""
+                                    newDeptName = ""
+                                }
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("form_new_dept_submit_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(Icons.Default.AddCircle, contentDescription = "Add Dept", tint = Color.White, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("বিভাগ যুক্ত করুন", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
             // Database Management Directory List Header with Department Fast Selection
             item {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -1656,25 +2525,44 @@ fun AdminDashboardView(
                         modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
                     )
 
-                    // Department filtering row in Admin view
-                    Row(
+                    // Department filtering row in Admin view - Scrollable LazyRow
+                    LazyRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        listOf("All" to "সকল বিভাগ", "CSE" to "CSE", "EEE" to "EEE", "PHARM" to "PHARM").forEach { (code, label) ->
+                        item {
+                            val isSel = filterDept == "All"
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(if (isSel) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent)
+                                    .border(1.dp, if (isSel) MaterialTheme.colorScheme.primary else Color(0xFFCAC4D0), CircleShape)
+                                    .clickable { filterDept = "All" }
+                                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "সকল বিভাগ",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSel) MaterialTheme.colorScheme.primary else Color.Gray
+                                )
+                            }
+                        }
+
+                        items(departments) { (code, label) ->
                             val isSel = filterDept == code
                             Box(
                                 modifier = Modifier
-                                    .weight(1f)
                                     .clip(CircleShape)
                                     .background(if (isSel) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent)
                                     .border(1.dp, if (isSel) MaterialTheme.colorScheme.primary else Color(0xFFCAC4D0), CircleShape)
                                     .clickable { filterDept = code }
-                                    .padding(vertical = 6.dp),
+                                    .padding(horizontal = 14.dp, vertical = 6.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = label,
+                                    text = code,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (isSel) MaterialTheme.colorScheme.primary else Color.Gray
