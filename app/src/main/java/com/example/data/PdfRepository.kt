@@ -40,6 +40,10 @@ class PdfRepository(private val pdfDao: PdfDao) {
         pdfDao.deleteCR(cr)
     }
 
+    suspend fun getCRByPasscode(passcode: String): ClassRepresentative? = withContext(Dispatchers.IO) {
+        pdfDao.getCRByPasscode(passcode)
+    }
+
     suspend fun insertUser(user: User) = withContext(Dispatchers.IO) {
         pdfDao.insertUser(user)
     }

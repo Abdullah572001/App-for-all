@@ -1,5 +1,6 @@
 package com.example.ui
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -7,6 +8,7 @@ import com.example.data.PdfDocument
 import com.example.data.PdfRepository
 import com.example.data.ClassRepresentative
 import com.example.data.User
+import com.example.data.FirebaseService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -18,11 +20,37 @@ enum class SignUpResult {
     EMPTY_FIELDS
 }
 
-class PdfViewModel(private val repository: PdfRepository) : ViewModel() {
+class PdfViewModel(private val repository: PdfRepository, private val context: android.content.Context) : ViewModel() {
+
+    private val prefs = context.getSharedPreferences("iiuc_pdf_prefs", android.content.Context.MODE_PRIVATE)
 
     // General User Authentication State
     private val _currentUser = MutableStateFlow<User?>(null)
     val currentUser = _currentUser.asStateFlow()
+
+    fun syncWithFirebase() {
+        if (!FirebaseService.isFirebaseOnline) return
+        viewModelScope.launch {
+            try {
+                // Sync CRs from Firebase
+                val firebaseCrs = FirebaseService.getAllCRs()
+                for (cr in firebaseCrs) {
+                    repository.insertCR(cr)
+                }
+
+                // Sync PDFs from Firebase
+                val firebasePdfs = FirebaseService.getAllPdfs()
+                val currentPdfs = allPdfs.value
+                for (pdf in firebasePdfs) {
+                    if (!currentPdfs.any { it.title.equals(pdf.title, ignoreCase = true) }) {
+                        repository.insertPdf(pdf)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("PdfViewModel", "Failed to sync with Firebase: ${e.message}")
+            }
+        }
+    }
 
     suspend fun signUpUser(email: String, idNo: String, pass: String): SignUpResult {
         val trimmedEmail = email.trim()
@@ -39,16 +67,40 @@ class PdfViewModel(private val repository: PdfRepository) : ViewModel() {
             return SignUpResult.INVALID_EMAIL
         }
 
-        // Check if user already exists
-        val existing = repository.getUserByIdNo(trimmedId)
-        if (existing != null) {
-            return SignUpResult.ALREADY_EXISTS
+        val role = if (trimmedId.equals("q251064", ignoreCase = true)) {
+            "admin"
+        } else {
+            val crMatch = allCRs.value.firstOrNull { it.passcode.equals(trimmedId, ignoreCase = true) }
+            if (crMatch != null) "cr" else "student"
+        }
+        val department = if (role == "cr") {
+            allCRs.value.firstOrNull { it.passcode.equals(trimmedId, ignoreCase = true) }?.department
+        } else null
+
+        // 1. Firebase Online Registration Flow
+        if (FirebaseService.isFirebaseOnline) {
+            try {
+                FirebaseService.signUp(trimmedEmail, trimmedId, trimmedPass, role, department)
+            } catch (e: Exception) {
+                Log.e("PdfViewModel", "Firebase signUp error: ${e.message}")
+                if (e.message?.contains("collision") == true || e.message?.contains("already in use") == true) {
+                    return SignUpResult.ALREADY_EXISTS
+                }
+            }
         }
 
-        // Save User in the Room database
-        val newUser = User(idNo = trimmedId, email = trimmedEmail, password = trimmedPass)
-        repository.insertUser(newUser)
-        _currentUser.value = newUser
+        // 2. Local database cache persistence
+        val existing = repository.getUserByIdNo(trimmedId)
+        if (existing == null) {
+            val newUser = User(idNo = trimmedId, email = trimmedEmail, password = trimmedPass)
+            repository.insertUser(newUser)
+            _currentUser.value = newUser
+        } else {
+            if (!FirebaseService.isFirebaseOnline) {
+                return SignUpResult.ALREADY_EXISTS
+            }
+            _currentUser.value = existing
+        }
 
         // Authorize Role during Signup
         if (trimmedId.equals("q251064", ignoreCase = true)) {
@@ -89,7 +141,42 @@ class PdfViewModel(private val repository: PdfRepository) : ViewModel() {
             return true
         }
 
-        // 2. Database user check
+        val email = if (trimmedId.contains("@")) trimmedId else "$trimmedId@ugrad.iiuc.ac.bd"
+
+        // 2. Firebase Online Signin Flow
+        if (FirebaseService.isFirebaseOnline) {
+            try {
+                val userData = FirebaseService.signIn(email, trimmedPass)
+                if (userData != null) {
+                    val firestoreId = userData["idNo"] as? String ?: trimmedId
+                    val firestoreEmail = userData["email"] as? String ?: email
+                    val role = userData["role"] as? String ?: "student"
+                    val dept = userData["department"] as? String ?: ""
+
+                    val user = User(idNo = firestoreId, email = firestoreEmail, password = trimmedPass)
+                    repository.insertUser(user)
+                    _currentUser.value = user
+
+                    if (role == "admin" || firestoreId.equals("q251064", ignoreCase = true)) {
+                        _isAdminMode.value = true
+                        _activeCR.value = null
+                    } else if (role == "cr") {
+                        _isAdminMode.value = false
+                        _activeCR.value = ClassRepresentative(name = "CR (" + dept + ")", passcode = firestoreId, department = dept)
+                    } else {
+                        _isAdminMode.value = false
+                        _activeCR.value = null
+                    }
+
+                    syncWithFirebase()
+                    return true
+                }
+            } catch (e: Exception) {
+                Log.e("PdfViewModel", "Firebase signIn error: ${e.message}")
+                return false
+            }
+        }
+
         val user = repository.getUserByIdNo(trimmedId)
         if (user != null && user.password == trimmedPass) {
             _currentUser.value = user
@@ -136,6 +223,14 @@ class PdfViewModel(private val repository: PdfRepository) : ViewModel() {
     // Mode
     private val _isAdminMode = MutableStateFlow(false)
     val isAdminMode = _isAdminMode.asStateFlow()
+
+    // Theme Mode
+    private val _isDarkMode = MutableStateFlow(false)
+    val isDarkMode = _isDarkMode.asStateFlow()
+
+    fun toggleTheme() {
+        _isDarkMode.value = !_isDarkMode.value
+    }
 
     // Active Class Representative logged in
     private val _activeCR = MutableStateFlow<ClassRepresentative?>(null)
@@ -238,9 +333,54 @@ class PdfViewModel(private val repository: PdfRepository) : ViewModel() {
         )
 
     init {
-        // Run database seeding on start
+        // Run database seeding and session auto-login on start
         viewModelScope.launch {
             repository.seedDatabaseIfEmpty()
+            if (FirebaseService.isFirebaseOnline) {
+                syncWithFirebase()
+            }
+
+            // Restore user session
+            try {
+                val savedId = prefs.getString("logged_in_id", null)
+                if (savedId != null) {
+                    val user = repository.getUserByIdNo(savedId)
+                    if (user != null) {
+                        _currentUser.value = user
+                        // resolve roles
+                        if (savedId.equals("q251064", ignoreCase = true)) {
+                            _isAdminMode.value = true
+                            _activeCR.value = null
+                        } else {
+                            val crMatch = repository.getCRByPasscode(savedId)
+                            if (crMatch != null) {
+                                _activeCR.value = crMatch
+                                _isAdminMode.value = false
+                            } else {
+                                _activeCR.value = null
+                                _isAdminMode.value = false
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("PdfViewModel", "Failed to restore session: ${e.message}")
+            }
+        }
+
+        // Observer pattern: Listen/observe currentUser updates to maintain modern session persistence
+        viewModelScope.launch {
+            _currentUser.collect { user ->
+                try {
+                    if (user != null) {
+                        prefs.edit().putString("logged_in_id", user.idNo).apply()
+                    } else {
+                        prefs.edit().remove("logged_in_id").apply()
+                    }
+                } catch (e: Exception) {
+                    Log.e("PdfViewModel", "Failed to persist session: ${e.message}")
+                }
+            }
         }
     }
 
@@ -294,26 +434,33 @@ class PdfViewModel(private val repository: PdfRepository) : ViewModel() {
 
     fun addCR(name: String, passcode: String, dept: String) {
         viewModelScope.launch {
-            repository.insertCR(
-                ClassRepresentative(
-                    name = name.trim(),
-                    passcode = passcode.trim(),
-                    department = dept.trim().uppercase()
-                )
+            val cr = ClassRepresentative(
+                name = name.trim(),
+                passcode = passcode.trim(),
+                department = dept.trim().uppercase()
             )
+            repository.insertCR(cr)
+            if (FirebaseService.isFirebaseOnline) {
+                FirebaseService.uploadCR(cr)
+            }
         }
     }
 
     fun deleteCR(cr: ClassRepresentative) {
         viewModelScope.launch {
             repository.deleteCR(cr)
+            if (FirebaseService.isFirebaseOnline) {
+                FirebaseService.deleteCR(cr.passcode)
+            }
         }
     }
 
     // Admin commands
     fun addPdf(title: String, dept: String, sem: Int, subCode: String, subName: String, type: String, size: String) {
         viewModelScope.launch {
+            val maxId = allPdfs.value.maxOfOrNull { it.id } ?: 0
             val newPdf = PdfDocument(
+                id = maxId + 1,
                 title = title,
                 department = dept,
                 semester = sem,
@@ -324,12 +471,18 @@ class PdfViewModel(private val repository: PdfRepository) : ViewModel() {
                 isUserUploaded = true
             )
             repository.insertPdf(newPdf)
+            if (FirebaseService.isFirebaseOnline) {
+                FirebaseService.uploadPdf(newPdf)
+            }
         }
     }
 
     fun deletePdf(pdf: PdfDocument) {
         viewModelScope.launch {
             repository.deletePdf(pdf)
+            if (FirebaseService.isFirebaseOnline) {
+                FirebaseService.deletePdf(pdf.title)
+            }
         }
     }
 
@@ -365,11 +518,11 @@ class PdfViewModel(private val repository: PdfRepository) : ViewModel() {
     }
 }
 
-class PdfViewModelFactory(private val repository: PdfRepository) : ViewModelProvider.Factory {
+class PdfViewModelFactory(private val repository: PdfRepository, private val context: android.content.Context) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(PdfViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return PdfViewModel(repository) as T
+            return PdfViewModel(repository, context) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

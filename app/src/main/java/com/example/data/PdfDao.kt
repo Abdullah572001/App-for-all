@@ -38,6 +38,9 @@ interface PdfDao {
     @Delete
     suspend fun deleteCR(cr: ClassRepresentative)
 
+    @Query("SELECT * FROM class_representatives WHERE passcode = :passcode LIMIT 1")
+    suspend fun getCRByPasscode(passcode: String): ClassRepresentative?
+
     // User Authentication Methods
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertUser(user: User)

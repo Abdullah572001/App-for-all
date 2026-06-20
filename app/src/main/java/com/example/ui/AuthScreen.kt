@@ -32,6 +32,7 @@ import kotlinx.coroutines.launch
 fun AuthScreen(viewModel: PdfViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val isDarkTheme by viewModel.isDarkMode.collectAsState()
     
     // Switch between Sign In (false) and Sign Up (true)
     var isSignUp by remember { mutableStateOf(false) }
@@ -69,6 +70,21 @@ fun AuthScreen(viewModel: PdfViewModel) {
             .verticalScroll(rememberScrollState()),
         contentAlignment = Alignment.Center
     ) {
+        // Theme Toggle at Top Right
+        IconButton(
+            onClick = { viewModel.toggleTheme() },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(16.dp)
+                .testTag("auth_theme_toggle")
+        ) {
+            Icon(
+                imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                contentDescription = "Toggle Dark/Light Mode",
+                tint = primaryColor
+            )
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()

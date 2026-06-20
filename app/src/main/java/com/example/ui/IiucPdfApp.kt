@@ -3,6 +3,7 @@ package com.example.ui
 import android.widget.Toast
 import com.example.ui.theme.*
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,6 +40,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
+import android.provider.OpenableColumns
 import com.example.data.PdfDocument
 import kotlinx.coroutines.launch
 
@@ -59,6 +64,7 @@ fun IiucPdfApp(viewModel: PdfViewModel) {
     val downloadedPdfs by viewModel.downloadedPdfs.collectAsStateWithLifecycle()
     val downloadProgress by viewModel.downloadProgress.collectAsStateWithLifecycle()
     val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
+    val isDarkMode by viewModel.isDarkMode.collectAsStateWithLifecycle()
 
     // Local controller states
     var showAdminDialog by remember { mutableStateOf(false) }
@@ -99,6 +105,18 @@ fun IiucPdfApp(viewModel: PdfViewModel) {
                         }
                     },
                     actions = {
+                        // Theme Switcher Button
+                        IconButton(
+                            onClick = { viewModel.toggleTheme() },
+                            modifier = Modifier.testTag("theme_toggle_button")
+                        ) {
+                            Icon(
+                                imageVector = if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                contentDescription = "Toggle Theme",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
                         // Profile Badge matching the HTML mockup - clickable to show student profile dialog
                         Box(
                             modifier = Modifier
@@ -184,6 +202,72 @@ fun IiucPdfApp(viewModel: PdfViewModel) {
         ) {
             // Main Archive View
             if (activeTab == 0) {
+                // Firebase Online/Offline status card
+                val isFirebaseOnline = com.example.data.FirebaseService.isFirebaseOnline
+                var showFirebaseDetails by remember { mutableStateOf(false) }
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isFirebaseOnline) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = if (isFirebaseOnline) Icons.Default.Cloud else Icons.Default.CloudOff,
+                                    contentDescription = "Firebase Status Icon",
+                                    tint = if (isFirebaseOnline) Color(0xFF2E7D32) else Color(0xFFE65100),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (isFirebaseOnline) "Firebase Cloud Mode Active" else "Firebase Mock-Sandbox Mode",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isFirebaseOnline) Color(0xFF2E7D32) else Color(0xFFE65100)
+                                )
+                            }
+                            Text(
+                                text = "বিস্তারিত",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = if (isFirebaseOnline) Color(0xFF2E7D32) else Color(0xFFE65100),
+                                modifier = Modifier
+                                    .clickable { showFirebaseDetails = !showFirebaseDetails }
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                        if (showFirebaseDetails) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = if (isFirebaseOnline) {
+                                    "আপনার অ্যাপটি রিয়েল-টাইম ক্লাউড ডেটাবেস (Firebase Auth & Firestore) এর সাথে সঠিকভাবে সংযুক্ত আছে। ফাইল আপলোড, ডিলিট এবং লগইন সরাসরি ফায়ারবেস ডাটাবেসে সিঙ্ক হচ্ছে।"
+                                } else {
+                                    "বর্তমানে Firebase Sandbox মোডে চলছে। রিয়েল ফায়ারবেস ক্লাউডের সাথে কানেক্ট করতে আপনার Google Firebase Project এর `.env` কী-গুলো যোগ করুন। (Android local Room Database পুরোপুরি সক্রিয় ও সচল আছে)"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isFirebaseOnline) Color(0xFF388E3C) else Color(0xFFF57C00)
+                            )
+                        }
+                    }
+                }
+
                 // Search Bar - fully rounded responsive pill
                 OutlinedTextField(
                     value = searchQuery,
@@ -662,6 +746,45 @@ fun IiucPdfApp(viewModel: PdfViewModel) {
         var isTitleError by remember { mutableStateOf(false) }
         var isCodeError by remember { mutableStateOf(false) }
 
+        var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
+        var selectedFileName by remember { mutableStateOf("") }
+
+        val filePickerLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.GetContent()
+        ) { uri: Uri? ->
+            uri?.let {
+                selectedFileUri = it
+                try {
+                    val cursor = context.contentResolver.query(it, null, null, null, null)
+                    cursor?.use { c ->
+                        if (c.moveToFirst()) {
+                            val nameIdx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                            val sizeIdx = c.getColumnIndex(OpenableColumns.SIZE)
+                            val name = if (nameIdx != -1) c.getString(nameIdx) else "attached_file.pdf"
+                            val size = if (sizeIdx != -1) c.getLong(sizeIdx) else 0L
+
+                            selectedFileName = name
+                            if (name.lowercase().endsWith(".pdf")) {
+                                uploadTitle = name.substringBeforeLast(".pdf")
+                            } else {
+                                uploadTitle = name
+                            }
+
+                            val mbSize = if (size > 0L) {
+                                String.format("%.2f MB", size.toFloat() / (1024f * 1024f))
+                            } else {
+                                "1.2 MB"
+                            }
+                            uploadSize = mbSize
+                        }
+                    }
+                } catch (e: Exception) {
+                    selectedFileName = "Selected File"
+                    uploadSize = "1.5 MB"
+                }
+            }
+        }
+
         Dialog(onDismissRequest = { showUploadDialog = false }) {
             Card(
                 shape = RoundedCornerShape(16.dp),
@@ -690,6 +813,67 @@ fun IiucPdfApp(viewModel: PdfViewModel) {
                             lineHeight = 14.sp
                         )
                         Spacer(modifier = Modifier.height(10.dp))
+                    }
+
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { filePickerLauncher.launch("application/pdf") }
+                                .padding(vertical = 4.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(
+                                width = 1.5.dp,
+                                color = if (selectedFileUri != null) MaterialTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.5f)
+                            ),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (selectedFileUri != null) MaterialTheme.colorScheme.primary.copy(alpha = 0.05f) else Color.Transparent
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (selectedFileUri != null) Icons.Default.Check else Icons.Default.Add,
+                                    contentDescription = "PDF Icon",
+                                    tint = if (selectedFileUri != null) MaterialTheme.colorScheme.primary else Color.Gray,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                                Text(
+                                    text = if (selectedFileUri != null) "PDF ফাইল সংযোজিত হয়েছে" else "ডিভাইস থেকে PDF ফাইল যুক্ত করুন",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (selectedFileUri != null) MaterialTheme.colorScheme.primary else Color.Black
+                                )
+                                if (selectedFileUri != null) {
+                                    Text(
+                                        text = selectedFileName,
+                                        fontSize = 11.sp,
+                                        color = Color.DarkGray,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        text = "ফাইলের সাইজ: $uploadSize (স্বয়ংক্রিয়)",
+                                        fontSize = 10.sp,
+                                        color = Color.Gray
+                                    )
+                                } else {
+                                    Text(
+                                        text = "অনলাইন ফায়ারবেস ডাটাবেসে সিঙ্ক করার জন্য আপনার ডিভাইস থেকে PDF সিলেক্ট করুন",
+                                        fontSize = 10.sp,
+                                        color = Color.Gray,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
                     }
 
                     item {
