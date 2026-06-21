@@ -121,3 +121,18 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
+
+tasks.register<Copy>("copyApkOutput") {
+    from(layout.buildDirectory.dir("outputs/apk/debug")) {
+        include("app-debug.apk")
+    }
+    into(layout.projectDirectory.dir(".build-outputs"))
+}
+
+tasks.register<Copy>("copyApkDownload") {
+    from(layout.buildDirectory.dir("outputs/apk/debug")) {
+        include("app-debug.apk")
+    }
+    into(layout.projectDirectory.dir("APK_DOWNLOAD"))
+}
+
